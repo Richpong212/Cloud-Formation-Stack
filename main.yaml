@@ -90,10 +90,6 @@ Resources:
 
   DatabaseStack:
     Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - NetworkStack
-      - SecurityStack
-      - SecretsStack
     Properties:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/database.yaml"
       Parameters:
