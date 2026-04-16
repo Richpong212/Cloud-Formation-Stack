@@ -54,3 +54,75 @@ jobs:
 
       - name: Validate CloudFormation template
         run: ./scripts/validate.sh
+
+  Deploy-dev-on-push:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Give Executable permission to the deploy scripts
+        run: |
+          chmod +x ./scripts/deploy.sh
+          chmod +x ./scripts/validate.sh
+
+      - name: Validate  CloudFormation Stack
+        run: ./scripts/validate.sh
+
+      - name: Deploy CloudFormation Stack
+        run: ./scripts/deploy.sh dev
+
+  Deploy-manual:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'deploy' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Give Executable permission to the deploy scripts
+        run: |
+          chmod +x ./scripts/deploy.sh
+          chmod +x ./scripts/validate.sh
+
+      - name: Validate  CloudFormation Stack
+        run: ./scripts/validate.sh
+
+      - name: Deploy CloudFormation Stack
+        run: ./scripts/deploy.sh ${{ github.event.inputs.environment }}
+
+  destroy-manual:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Give Executable permission to the deploy scripts
+        run: |
+          chmod +x ./scripts/destroy.sh
+
+      - name: Destroy CloudFormation Stack
+        run: ./scripts/destroy.sh ${{ github.event.inputs.environment }}
