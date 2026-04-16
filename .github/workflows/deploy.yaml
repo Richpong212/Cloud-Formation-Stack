@@ -51,3 +51,6 @@ jobs:
         run: |
           cfn-lint main.yaml
           cfn-lint template-structure/**/*.yaml
+
+      - name: Validate CloudFormation template
+        run: ./scripts/validate.sh
