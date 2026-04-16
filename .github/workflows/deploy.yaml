@@ -46,3 +46,8 @@ jobs:
       - name: Install cfn-lint
         run: |
           pip install cfn-lint
+
+      - name: Validate CloudFormation template
+        run: |
+          cfn-lint main.yaml
+          cfn-lint template-structure/**/*.yaml
