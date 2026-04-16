@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: "Environment to deploy (dev/prod)"
+    Default: "dev"
+    AllowedValues: [dev, prod]
+
+  TemplateBucketName:
+    Type: String
+    Description: "S3 bucket name to store CloudFormation templates"
+    Default: "codegenitor-cfn-templates"
+
+  DBName:
+    Type: String
+    Description: "RDS Database Name"
+
+  DBUsername:
+    Type: String
+    Description: "RDS Database Username"
+    NoEcho: true
+
+  AlertEmail:
+    Type: String
+    Description: "Email address to receive CloudWatch alarms"
+
+  EnableHTTPS:
+    Type: String
+    Description: "Enable HTTPS for ALB (true/false)"
+    AllowedValues: ["true", "false"]
+    Default: "false"
+
+  SSLCertificateArn:
+    Type: String
+    Description: "ARN of the SSL certificate for HTTPS (required if EnableHTTPS is true)"
+    Default: ""
+
+Resources:
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/network.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VPCId: !GetAtt NetworkStack.Outputs.VpcId
+        TemplateBucketName: !Ref TemplateBucketName
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/security.yaml"
+
+  AlbStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/alb.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+        PublicSubnetAId: !GetAtt NetworkStack.Outputs.PublicSubnetAId
+        PublicSubnetBId: !GetAtt NetworkStack.Outputs.PublicSubnetBId
+        AlbSecurityGroupId: !GetAtt SecurityStack.Outputs.AlbSecurityGroupId
+        EnableHTTPS: !Ref EnableHTTPS
+        SSLCertificateArn: !Ref SSLCertificateArn
+
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/compute.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        TemplateBucketName: !Ref TemplateBucketName
+        PrivateAppSubnetAId: !GetAtt NetworkStack.Outputs.PrivateAppSubnetAId
+        PrivateAppSubnetBId: !GetAtt NetworkStack.Outputs.PrivateAppSubnetBId
+        AppSecurityGroupId: !GetAtt SecurityStack.Outputs.AppSecurityGroupId
+        TargetGroupArn: !GetAtt AlbStack.Outputs.TargetGroupArn
+        Ec2InstanceProfileName: !GetAtt SecurityStack.Outputs.Ec2InstanceProfileName
+
+  SecretsStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: SecurityStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/secrets.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        DBName: !Ref DBName
+        DBUsername: !Ref DBUsername
+
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - NetworkStack
+      - SecurityStack
+      - SecretsStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/database.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        PrivateDbSubnetAId: !GetAtt NetworkStack.Outputs.PrivateDbSubnetAId
+        PrivateDbSubnetBId: !GetAtt NetworkStack.Outputs.PrivateDbSubnetBId
+        DbSecurityGroupId: !GetAtt SecurityStack.Outputs.DbSecurityGroupId
+        DatabaseSecretArn: !GetAtt SecretsStack.Outputs.DatabaseSecretArn
+
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.amazonaws.com/templates/monitoring.yaml"
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        LoadBalancerFullName: !GetAtt AlbStack.Outputs.LoadBalancerFullName
+        TargetGroupFullName: !GetAtt AlbStack.Outputs.TargetGroupFullName
+        AutoScalingGroupName: !GetAtt ComputeStack.Outputs.AutoScalingGroupName
+        AlertEmail: !Ref AlertEmail
+
+Outputs:
+  VpcId:
+    Description: The ID of the VPC created in the NetworkStack
+    Value: !GetAtt NetworkStack.Outputs.VpcId
+
+  AlbSecurityGroupId:
+    Description: ALB Security Group ID from the security stack
+    Value: !GetAtt SecurityStack.Outputs.AlbSecurityGroupId
+
+  AppSecurityGroupId:
+    Description: App Security Group ID from the security stack
+    Value: !GetAtt SecurityStack.Outputs.AppSecurityGroupId
+
+  DbSecurityGroupId:
+    Description: DB Security Group ID from the security stack
+    Value: !GetAtt SecurityStack.Outputs.DbSecurityGroupId
+
+  Ec2InstanceProfileName:
+    Description: EC2 Instance Profile Name from the security stack
+    Value: !GetAtt SecurityStack.Outputs.Ec2InstanceProfileName
+
+  LoadBalancerArn:
+    Description: ALB ARN from the ALB stack
+    Value: !GetAtt AlbStack.Outputs.LoadBalancerArn
+
+  LoadBalancerDnsName:
+    Description: ALB DNS name from the ALB stack
+    Value: !GetAtt AlbStack.Outputs.LoadBalancerDnsName
+
+  TargetGroupArn:
+    Description: Target group ARN from the ALB stack
+    Value: !GetAtt AlbStack.Outputs.TargetGroupArn
+
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name from the compute stack
+    Value: !GetAtt ComputeStack.Outputs.AutoScalingGroupName
+
+  LaunchTemplateId:
+    Description: Launch Template ID from the compute stack
+    Value: !GetAtt ComputeStack.Outputs.LaunchTemplateId
+
+  DatabaseSecretArn:
+    Description: Database secret ARN from the secrets stack
+    Value: !GetAtt SecretsStack.Outputs.DatabaseSecretArn
+
+  DBInstanceEndpoint:
+    Description: Database endpoint from the database stack
+    Value: !GetAtt DatabaseStack.Outputs.DBInstanceEndpoint
+
+  DBInstancePort:
+    Description: Database port from the database stack
+    Value: !GetAtt DatabaseStack.Outputs.DBInstancePort
+
+  AlertsTopicArn:
+    Description: Alerts SNS topic ARN
+    Value: !GetAtt MonitoringStack.Outputs.AlertsTopicArn
+
+  UnHealthyHostCountAlarmName:
+    Description: ALB healthy host count alarm
+    Value: !GetAtt MonitoringStack.Outputs.UnHealthyHostCountAlarmName
+
+  HighCPUAlarmName:
+    Description: ASG high CPU alarm
+    Value: !GetAtt MonitoringStack.Outputs.HighCPUAlarmName

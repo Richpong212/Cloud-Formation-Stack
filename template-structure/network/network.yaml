@@ -1,0 +1,358 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Network Stack for CloudFormation Stack Deployment"
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: "Environment to deploy (dev/prod)"
+    Default: "dev"
+    AllowedValues: [dev, prod]
+  VpcCidr:
+    Type: String
+    Description: "CIDR block for the VPC"
+    Default: "10.0.0.0/16"
+  PublicSubnetACidr:
+    Type: String
+    Description: "CIDR block for Public Subnet A"
+    Default: "10.0.1.0/24"
+  PublicSubnetBCidr:
+    Type: String
+    Description: "CIDR block for Public Subnet B"
+    Default: "10.0.2.0/24"
+  PrivateAppSubnetACidr:
+    Type: String
+    Description: "CIDR block for Private App Subnet A"
+    Default: "10.0.11.0/24"
+  PrivateAppSubnetBCidr:
+    Type: String
+    Description: "CIDR block for Private App Subnet B"
+    Default: "10.0.12.0/24"
+  PrivateDbSubnetACidr:
+    Type: String
+    Description: "CIDR block for Private DB Subnet A"
+    Default: "10.0.21.0/24"
+  PrivateDbSubnetBCidr:
+    Type: String
+    Description: "CIDR block for Private DB Subnet B"
+    Default: "10.0.22.0/24"
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-vpc"
+        - Key: Project
+          Value: CloudFormationStackDeployment
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-igw"
+        - Key: Project
+          Value: CloudFormationStackDeployment
+
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-subnet-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Public
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-subnet-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Public
+
+  PrivateAppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateAppSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-app-subnet-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-app
+
+  PrivateAppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateAppSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-app-subnet-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-app
+
+  PrivateDbSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateDbSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-db-subnet-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-db
+
+  PrivateDbSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateDbSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-db-subnet-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-db
+
+  PulicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-rt"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Public
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PulicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PulicRouteTable
+
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PulicRouteTable
+
+  NatEipA:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachInternetGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-eip-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: NAT
+
+  NatEipB:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachInternetGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-eip-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: NAT
+
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEipA.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-gateway-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: NAT
+
+  NatGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEipB.AllocationId
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-gateway-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  PrivateAppRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-app-rt-a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-app
+
+  PrivateAppRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-app-rt-b"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Tier
+          Value: Private-app
+
+  PrivateAppRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateAppRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+
+  PrivateAppRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateAppRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+
+  PrivateAppSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateAppSubnetA
+      RouteTableId: !Ref PrivateAppRouteTableA
+
+  PrivateAppSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateAppSubnetB
+      RouteTableId: !Ref PrivateAppRouteTableB
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${EnvironmentName}-VpcId"
+
+  PublicSubnetAId:
+    Description: Public subnet A ID
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub "${EnvironmentName}-PublicSubnetAId"
+
+  PublicSubnetBId:
+    Description: Public subnet B ID
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub "${EnvironmentName}-PublicSubnetBId"
+
+  PrivateAppSubnetAId:
+    Description: Private app subnet A ID
+    Value: !Ref PrivateAppSubnetA
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateAppSubnetAId"
+
+  PrivateAppSubnetBId:
+    Description: Private app subnet B ID
+    Value: !Ref PrivateAppSubnetB
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateAppSubnetBId"
+
+  PrivateDbSubnetAId:
+    Description: Private DB subnet A ID
+    Value: !Ref PrivateDbSubnetA
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateDbSubnetAId"
+
+  PrivateDbSubnetBId:
+    Description: Private DB subnet B ID
+    Value: !Ref PrivateDbSubnetB
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateDbSubnetBId"
+
+  InternetGatewayId:
+    Description: Internet Gateway ID
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub "${EnvironmentName}-InternetGatewayId"
+
+  NatGatewayAId:
+    Description: NAT Gateway A ID
+    Value: !Ref NatGatewayA
+    Export:
+      Name: !Sub "${EnvironmentName}-NatGatewayAId"
+
+  NatGatewayBId:
+    Description: NAT Gateway B ID
+    Value: !Ref NatGatewayB
+    Export:
+      Name: !Sub "${EnvironmentName}-NatGatewayBId"
+
+  PrivateAppRouteTableAId:
+    Description: Private app route table A ID
+    Value: !Ref PrivateAppRouteTableA
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateAppRouteTableAId"
+
+  PrivateAppRouteTableBId:
+    Description: Private app route table B ID
+    Value: !Ref PrivateAppRouteTableB
+    Export:
+      Name: !Sub "${EnvironmentName}-PrivateAppRouteTableBId"

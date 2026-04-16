@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Security resources for the Multi-Tier CloudFormation template."
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: "The name of the environment (e.g., dev, prod)."
+    Default: "dev"
+
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: "The ID of the VPC where the security groups will be created."
+
+  TemplateBucketName:
+    Type: String
+    Description: "S3 bucket name where bootstrap scripts are stored"
+
+  AppPort:
+    Type: Number
+    Description: "The port number for the application (e.g., 80 for HTTP)."
+    Default: 80
+
+  DbPort:
+    Type: Number
+    Description: "The port number for the database (e.g., 5432 for Postgres)."
+    Default: 5432
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for the Application Load Balancer"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow HTTP traffic from anywhere"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow HTTPS traffic from anywhere"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow all outbound traffic"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-alb-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: "Multi-Tier CloudFormation"
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow traffic to the application servers from the ALB ONLY"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AppPort
+          ToPort: !Ref AppPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: "Allow traffic from the ALB security group"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow all outbound traffic"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-app-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: "Multi-Tier CloudFormation"
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow traffic to the database servers from the application servers ONLY"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref DbPort
+          ToPort: !Ref DbPort
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          Description: "Allow traffic from the application security group"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+          Description: "Allow all outbound traffic"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: "Multi-Tier CloudFormation"
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: AllowReadUserDataScriptFromS3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${TemplateBucketName}/scripts/userdata.sh"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-ec2-role"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: "Multi-Tier CloudFormation"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+Outputs:
+  AlbSecurityGroupId:
+    Description: Security Group ID for the Application Load Balancer
+    Value: !Ref AlbSecurityGroup
+
+  AppSecurityGroupId:
+    Description: Security Group ID for the application servers
+    Value: !Ref AppSecurityGroup
+
+  DbSecurityGroupId:
+    Description: Security Group ID for the database
+    Value: !Ref DbSecurityGroup
+
+  Ec2RoleArn:
+    Description: ARN of the IAM Role for EC2 instances
+    Value: !GetAtt EC2Role.Arn
+
+  Ec2InstanceProfileName:
+    Description: Name of the EC2 instance profile
+    Value: !Ref EC2InstanceProfile

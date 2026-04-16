@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Compute resources for the Multi-Tier CloudFormation template."
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: "The name of the environment (e.g., dev, prod)."
+    Default: "dev"
+
+  TemplateBucketName:
+    Type: String
+    Description: "S3 bucket name where bootstrap scripts are stored"
+
+  PrivateAppSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+    Description: "The ID of the private subnet A for the application."
+
+  PrivateAppSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+    Description: "Private app subnet B"
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: "Security group for application instances"
+
+  TargetGroupArn:
+    Type: String
+    Description: "Target group ARN for the ALB"
+
+  Ec2InstanceProfileName:
+    Type: String
+    Description: "EC2 instance profile name"
+
+  InstanceType:
+    Type: String
+    Description: "EC2 instance type"
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+      - t3.small
+
+Resources:
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref Ec2InstanceProfileName
+        SecurityGroupIds:
+          - !Ref AppSecurityGroupId
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+
+            dnf update -y
+            dnf install -y awscli
+
+            aws s3 cp s3://${TemplateBucketName}/scripts/userdata.sh /tmp/userdata.sh
+            chmod +x /tmp/userdata.sh
+            /tmp/userdata.sh
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${EnvironmentName}-app-instance"
+              - Key: Environment
+                Value: !Ref EnvironmentName
+              - Key: Project
+                Value: "Multi-Tier CloudFormation"
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateAppSubnetAId
+        - !Ref PrivateAppSubnetBId
+      MinSize: "2"
+      MaxSize: "2"
+      DesiredCapacity: "2"
+      TargetGroupARNs:
+        - !Ref TargetGroupArn
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-app-instance"
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref EnvironmentName
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: "Multi-Tier CloudFormation"
+          PropagateAtLaunch: true
+
+Outputs:
+  LaunchTemplateId:
+    Description: "Launch Template ID"
+    Value: !Ref AppLaunchTemplate
+
+  AutoScalingGroupName:
+    Description: "Auto Scaling Group name"
+    Value: !Ref AppAutoScalingGroup
